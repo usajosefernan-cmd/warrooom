@@ -189,7 +189,12 @@ export default function WarRoom() {
         defender: "Defensor de la Idea",
         critic: "Crítico del Comité",
         architect: "Arquitecto Técnico",
-        pm: "Product Manager"
+        pm: "Product Manager",
+        researcher: "Investigador de Evidencias",
+        growth: "Growth Hacker",
+        legal: "Legal & Ético",
+        writer: "Redactor de Contenido",
+        implementer: "Implementador de Tareas"
       };
 
       for (const agentKey of activeAgents) {
@@ -273,9 +278,17 @@ export default function WarRoom() {
     switch (agent) {
       case "Defensor": return "border-emerald-500/30 bg-emerald-950/20 text-emerald-300";
       case "Crítico": return "border-rose-500/30 bg-rose-950/20 text-rose-300";
-      case "Investigador": return "border-blue-500/30 bg-blue-950/20 text-blue-300";
+      case "Investigador": 
+      case "Investigador de Evidencias": return "border-blue-500/30 bg-blue-950/20 text-blue-300";
+      case "Arquitecto técnico": 
       case "Arquitecto Técnico": return "border-violet-500/30 bg-violet-950/20 text-violet-300";
       case "Product Manager": return "border-amber-500/30 bg-amber-950/20 text-amber-300";
+      case "Growth": 
+      case "Growth Hacker": return "border-cyan-500/30 bg-cyan-950/20 text-cyan-300";
+      case "Legal / Ético": 
+      case "Legal & Ético": return "border-orange-500/30 bg-orange-950/20 text-orange-300";
+      case "Redactor": return "border-teal-500/30 bg-teal-950/20 text-teal-300";
+      case "Implementador": return "border-yellow-500/30 bg-yellow-950/20 text-yellow-300";
       default: return "border-zinc-800 bg-zinc-950/40 text-zinc-300";
     }
   };
@@ -462,8 +475,18 @@ export default function WarRoom() {
           <div className="flex items-center gap-3 mb-3">
             <span className="text-[10px] font-mono text-zinc-500">COMITÉ ACTIVO:</span>
             <div className="flex items-center gap-2">
-              {["defender", "critic", "architect", "pm"].map((agentId) => {
-                const names = { defender: "Defensor", critic: "Crítico", architect: "Arquitecto", pm: "PM" };
+              {["defender", "critic", "researcher", "architect", "pm", "growth", "legal", "writer", "implementer"].map((agentId) => {
+                const names = { 
+                  defender: "Defensor", 
+                  critic: "Crítico", 
+                  researcher: "Investigador",
+                  architect: "Arquitecto", 
+                  pm: "PM",
+                  growth: "Growth",
+                  legal: "Legal",
+                  writer: "Redactor",
+                  implementer: "Implementador"
+                };
                 const isActive = activeAgents.includes(agentId);
                 return (
                   <button
