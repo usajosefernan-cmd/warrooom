@@ -1,0 +1,278 @@
+"use client";
+
+import type { AgentResult, DebateRound } from "@/types";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import ProviderStatus from "@/components/ProviderStatus";
+import { runDebate } from "@/lib/agents";
+import { addProject, loadStore } from "@/storage/store";
+import type { Store, LiveDocument } from "@/types";
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString("es-ES");
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function loadProjectStore(): { store: Store; projectId: string } | null {
+  if (typeof window === "undefined") return null;
+  const slug = window.location.pathname.split("/")[2];
+  if (!slug) return null;
+  const store = loadStore();
+  const project = store.projects.find((item) => item.slug === slug || item.id === slug);
+  if (!project) return null;
+  return { store, projectId: project.id };
+}
+
+function storeFromParams() {
+  const params = new URLSearchParams(window.location.search);
+  const name = params.get("name");
+  const description = params.get("description");
+  if (!name) return null;
+  const store = addProject({ name, description: description ?? "" });
+  const project = store.projects.at(-1);
+  if (!project) return null;
+  return { store, projectId: project.id };
+}
+
+export default function WarRoomPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [prompt, setPrompt] = useState("");
+  const [isRunning, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<{ agents: AgentResult[]; synthesis: any } | null>(null);
+  const [lastRound, setLastRound] = useState<DebateRound | null>(null);
+  const [project, setProject] = useState<{ id: string; name: string } | null>(null);
+  const [document, setDocument] = useState<LiveDocument | null>(null);
+  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [sidebarTab, setSidebarTab] = useState<"decisions" | "hypotheses" | "risks" | "tasks">("decisions");
+  const [sidebarItems, setSidebarItems] = useState<{ id: string; title: string; status: string }[]>([]);
+
+  useEffect(() => {
+    const initial = loadProjectStore() || storeFromParams();
+    if (!initial) return;
+    setProject({ id: initial.projectId, name: initial.store.projects.find((item) => item.id === initial.projectId)?.name ?? "" });
+    setDocument(initial.store.documents[initial.projectId] ?? null);
+    const rounds = initial.store.rounds.filter((item) => item.projectId === initial.projectId);
+    const last = rounds.at(-1) ?? null;
+    setLastRound(last);
+    if (last) setLastResult({ agents: [], synthesis: { quality_gate: last.qualityGate } });
+  }, []);
+
+  const providerStatus = useMemo(
+    () => [
+      { provider: "Mock provider", modelOrGroup: "respuestas simuladas", estimatedCost: "Sin coste real", fallbackUsed: false },
+    ],
+    []
+  );
+
+  const run = async () => {
+    if (!prompt.trim() || !project?.id) return;
+    setRunning(true);
+    const result = await runDebate({ projectId: project.id, prompt: prompt.trim() });
+    const reloaded = loadStore();
+    const doc = reloaded.documents[project.id];
+    setDocument(doc);
+    const allRounds = reloaded.rounds.filter((item) => item.projectId === project.id);
+    setLastRound(allRounds.at(-1) ?? null);
+    setLastResult({ agents: result.agents, synthesis: result.synthesis });
+    setPrompt("");
+    setActiveProject(project.id);
+    setRunning(false);
+  };
+
+  const changeProject = (projectId: string) => {
+    setActiveProject(projectId);
+  };
+
+  const items = useMemo(() => {
+    const ifEmpty = [{ id: "empty-1", title: "Sin elementos aún en esta categoría.", status: "todo" }];
+    if (!project) return ifEmpty;
+    return sidebarItems;
+  }, [project, sidebarItems]);
+
+  function sidebarTabs() {
+    return (
+      <div className="inline-flex rounded-xl bg-surface-2 p-1">
+        {[
+          { key: "decisions", label: "Decisiones" },
+          { key: "hypotheses", label: "Hipótesis" },
+          { key: "risks", label: "Riesgos" },
+          { key: "tasks", label: "Tareas" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setSidebarTab(tab.key as typeof sidebarTab)}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              sidebarTab === tab.key
+                ? "bg-white/[0.08] text-white"
+                : "text-muted hover:text-white"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <section className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">War Room</h1>
+          <p className="text-sm text-muted">Navegación a herramientas del proyecto.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { href: "/dashboard", label: "Dashboard" },
+            { href: "/projects/new", label: "Nuevo proyecto" },
+            { href: "/settings", label: "Ajustes" },
+          ].map((item) => (
+            <Link key={item.href} href={item.href} className="rounded-xl bg-white/[0.06] px-3 py-2 text-xs text-white hover:bg-white/[0.12]">
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.6fr,1fr]">
+        <div className="space-y-4 rounded-2xl bg-surface p-5">
+          <div className="space-y-3">
+            <p className="text-sm text-white">Prompt del debate</p>
+            <textarea
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              rows={4}
+              placeholder="Analiza si deberíamos empezar por medio, bot, app o juego."
+              className="w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-white placeholder-muted focus:border-accent/60 focus:outline-none"
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-xs text-muted">Modo: mock</span>
+              <button
+                onClick={run}
+                disabled={isRunning}
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-400 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {isRunning ? "Ejecutando..." : "Ejecutar War Room"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm text-white">Documentos vivos</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {["vision", "conclusions", "risks", "technicalTasks", "sources", "roadmap", "decisions", "hypotheses"].map((section) => {
+                const labelMap: Record<string, string> = {
+                  vision: "Visión",
+                  conclusions: "Conclusiones",
+                  risks: "Riesgos",
+                  technicalTasks: "Tareas técnicas",
+                  sources: "Fuentes",
+                  roadmap: "Roadmap",
+                  decisions: "Decisiones",
+                  hypotheses: "Hipótesis",
+                };
+                const sectionMap: Record<string, keyof LiveDocument> = {
+                  vision: "vision",
+                  conclusions: "conclusions",
+                  risks: "risks",
+                  technicalTasks: "technicalTasks",
+                  sources: "sources",
+                  roadmap: "roadmap",
+                  decisions: "decisions",
+                  hypotheses: "hypotheses",
+                };
+                const value = document ? (document[sectionMap[section]] ?? "") : "";
+                return (
+                  <Link
+                    key={section}
+                    href={`/projects/${project?.id ?? "new"}/${section}`}
+                    className="rounded-xl bg-surface-2 p-3 hover:bg-white/[0.06]"
+                  >
+                    <p className="text-xs text-muted">{labelMap[section]}</p>
+                    <p className="mt-1 truncate text-xs text-white">{value ? "Actualizado" : "Sin contenido"}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-surface p-5">
+            <h3 className="text-sm font-semibold text-white">Quality gate</h3>
+            <div className="mt-3">
+              {!lastRound ? (
+                <p className="text-xs text-muted">Sin ejecuciones todavía.</p>
+              ) : (
+                <div className="space-y-2">
+                  <span className={`badge ${lastRound.qualityGate.passed ? "text-success" : "text-warning"}`}>
+                    {lastRound.qualityGate.passed ? "Aprobado" : "Alertas"}
+                  </span>
+                  <ul className="list-disc pl-5 text-xs text-muted">
+                    {lastRound.qualityGate.warnings.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <ProviderStatus providers={providerStatus} />
+
+          <div className="rounded-2xl bg-surface p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Panel lateral</h3>
+              {sidebarTabs()}
+            </div>
+            <ul className="mt-3 space-y-2">
+              {items.map((item) => (
+                <li key={item.id} className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-muted">
+                  {item.title}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {lastResult && (
+        <div className="mt-6 space-y-6">
+          <div className="rounded-2xl bg-surface p-5">
+            <h3 className="text-sm font-semibold text-white">Síntesis</h3>
+            <pre className="mt-3 overflow-x-auto rounded-xl bg-surface-2 p-4 text-xs text-muted">
+              {JSON.stringify(lastResult.synthesis, null, 2)}
+            </pre>
+          </div>
+
+          <div className="rounded-2xl bg-surface p-5">
+            <h3 className="text-sm font-semibold text-white">Agentes internos</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {lastResult.agents.map((item) => (
+                <div key={item.agent} className="rounded-xl bg-surface-2 p-4">
+                  <p className="text-sm text-white">{item.agent}</p>
+                  <p className="text-xs text-muted">{item.role}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
+                    {item.main_points.slice(0, 4).map((point, index) => (
+                      <li key={`${point}-${index}`}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
